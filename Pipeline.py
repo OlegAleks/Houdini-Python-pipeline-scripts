@@ -114,3 +114,238 @@ def removeFiles():
 				for file in fileList:
 					os.remove(file)
 				# print "*****************\n"
+def walk_and_set(rootNode, searchStr, replString, recursive):
+	try:
+		locked = rootNode.parent().isLocked()==1
+	except:
+		locked = 0
+	# print "rootNode = ", rootNode.path()
+	if(rootNode.path()=='/' or locked==0):
+		for parm in rootNode.parms():
+			not_lock_dis_hidden = parm.isLocked()==0 and parm.isDisabled()==0 and parm.isHidden()==0
+			isExp = 1
+			eX = ""
+			# check for expressions
+			try:
+				eX = parm.expression()
+			except:
+				isExp = 0
+			if isExp and not_lock_dis_hidden:
+				newStr = eX.replace(searchStr, replString)
+				print parm.path(), " isExp = 1", " newStr="+newStr
+				if(newStr!=eX):
+						parm.setExpression(newStr)			
+						# print parm.path(), ': expression: ', newStr
+			else:
+				if isinstance(parm.parmTemplate(), hou.StringParmTemplate):
+					# print "parm ", parm.path(), " keyframes=", len(parm.keyframes()), " not_lock_dis_hidden: ", not_lock_dis_hidden==True
+					if len(parm.keyframes())==0 and not_lock_dis_hidden==True:
+						realStr = parm.unexpandedString()
+						newStr = realStr.replace(searchStr, replString)
+						if(newStr!=realStr):
+							parm.set(newStr)
+							# print parm.path(), ': string: ', newStr
+		if len(rootNode.children())>0 and recursive:
+			for child in rootNode.children():
+				walk_and_set(child, searchStr, replString, True)
+
+def search_replace_str():
+	nodes = hou.selectedNodes()	
+	menu = hou.ui.readMultiInput("In Parameters", ("search for", "replace on"), buttons=('OK', "Cancel"), initial_contents = ('\\', '/'), close_choice = 1)
+	if(menu[0]!=1):
+		if len(nodes)==0:
+			buttons = ("Ok","Cancel")
+			choice = hou.ui.displayMessage("Apply for ALL nodes in scene:", buttons, hou.severityType.Message, 0, 1)
+			if choice!=1:
+				root = hou.node("/")
+				# print "send walk_and_set("+menu[1][0]+","+menu[1][1]+")"
+				walk_and_set(root, menu[1][0], menu[1][1], True)
+		else:
+			for root in nodes:
+				# print "send walk_and_set("+menu[1][0]+","+menu[1][1]+") for node "+root.path()
+				walk_and_set(root, menu[1][0], menu[1][1], False)
+
+def points_from_objects():
+	node = hou.selectedNodes()[0]
+	obj = hou.node('/obj')
+	pts = obj.createNode('geo', node_name = 'pts', run_init_scripts=False)
+	w = pts.createNode('attribwrangle')
+	w.parm('class').set(0)
+	number = len(node.children())
+	s = "int i = 0;\nwhile(i<" +str(number) +")\n{\n\tint pt = addpoint(geoself(), {0,0,0});\n\tsetpointattrib(geoself(), 'rotate', pt, {0,0,0}, 'set');\n\tsetpointattrib(geoself(), 'scale', pt, {1,1,1}, 'set');\n\ti++;\n}"
+	w.parm('snippet').set(s)
+	p = w.createOutputNode('python')
+	r = "node = hou.pwd()\n"
+	r += "geo = node.geometry()\n"
+	r += "fbx = hou.node('" + node.path() + "')\n"
+	r += "nodes = fbx.children()\n"
+	r += "i = 0\n"
+	r += "for point in geo.points():\n"
+	r += "\tnode = nodes[i]\n"
+	r += "\ttr = hou.Vector3(node.parm('tx').eval(), node.parm('ty').eval(), node.parm('tz').eval())\n"
+	r += "\tpoint.setPosition(tr)\n"
+	r += "\trot = hou.Vector3(node.parm('rx').eval(), node.parm('ry').eval(), node.parm('rz').eval())\n"
+	r += "\tpoint.setAttribValue('rotate', rot)\n"
+	r += "\tsc = hou.Vector3(node.parm('sx').eval(), node.parm('sy').eval(), node.parm('sz').eval())\n"
+	r += "\tpoint.setAttribValue('scale', rot)\n"
+	r += "\ti += 1\n"
+	p.parm('python').set(r)
+	p.setDisplayFlag(True)
+	p.setRenderFlag(True)
+
+def change_str(path, mode):
+	pattern1 = re.compile("\A\$JOB/|\A\$JOB$|\A\$JOB_S/|\A\$JOB_S$")
+	new_str = path
+	c = 0
+	if pattern1.search(path) == None:
+		hip = hou.getenv('HIP')
+		pattern = re.compile("/3d/hip$|/3d/hip/")
+		if pattern.search(hip):
+			pat_hip = re.compile("\A\$HIP/|\A\$HIP$")
+			if pat_hip.search(path):
+				re_subn = re.subn(pat_hip, '$'+mode+'/3d/hip/', path)
+				if re_subn[1]:
+					new_str = re_subn[0]
+					c = 1
+			else:
+				c_job = pattern.split(hip)[0]
+				parm_job = pattern.split(path)[0]
+				if c_job==parm_job:
+					pattern = re.compile(c_job)
+					re_subn = re.subn(pattern, "$"+mode, path)
+					if re_subn[1]:
+						new_str = re_subn[0]
+						c = 1
+	else:
+		re_subn = re.subn(pattern1, "$"+mode+"/", path)
+		if re_subn[1]:
+			new_str = re_subn[0]
+			c = 1
+	return [new_str, c]
+
+def all_JOB(mode, chx):
+	sel_nodes = hou.selectedNodes()
+	if len(sel_nodes)!=0:
+		all_nodes = sel_nodes
+	else:
+		all_sop = hou.node("/").recursiveGlob("*", filter = hou.nodeTypeFilter.Sop)
+		all_rop = hou.node("/").recursiveGlob("*", filter = hou.nodeTypeFilter.Rop)
+		all_vops = hou.node("/").recursiveGlob("*", filter = hou.nodeTypeFilter.Vop)
+		all_nodes = all_sop + all_rop + all_vops
+	processed = {}
+	for node in all_nodes:
+		n_type = node.type().name()
+		parm_name = None
+		new_str = ['', 0]
+		if n_type == 'file':
+			parm_name = 'file'
+		if n_type == 'alembic':
+			parm_name = 'fileName'
+		if n_type == 'rop_geometry':
+			parm_name = 'sopoutput'
+		if n_type == 'rop_alembic':
+			parm_name = 'filename'
+		if n_type == 'Redshift_Proxy_Output':
+			parm_name = 'RS_archive_file'
+		if n_type == 'Redshift_ROP':
+			parm_name = 'RS_outputFileNamePrefix'
+		if n_type == 'ifd':
+			parm_name = 'vm_picture'
+		if 'redshift' in n_type:
+			for parm in node.parms():
+				not_lock_dis_hidden = parm.isLocked()==0 and parm.isDisabled()==0 and parm.isHidden()==0
+				if parm.parmTemplate().type()==hou.parmTemplateType.String and not_lock_dis_hidden:
+					if parm.eval() != '' and len(parm.keyframes())==0:
+						parm_str = parm.unexpandedString()
+						new_str = change_str(parm_str, mode)
+						if new_str[1] == 1 and parm_str!=new_str[0]:
+							if chx:
+								processed[parm.path()] = new_str[0]
+								print parm.path() + " is set to: " + new_str[0]
+							else:
+								parm.set(new_str[0])
+			continue
+		if parm_name:
+			parm = node.parm(parm_name)
+			not_lock_dis_hidden = parm.isLocked()==0 and parm.isDisabled()==0 and parm.isHidden()==0
+			if  len(parm.keyframes())==0 and not_lock_dis_hidden:
+				parm_str = parm.unexpandedString()
+				new_str = change_str(parm_str, mode)
+		if new_str[1]==1 and parm_str!=new_str[0]:
+			if chx:
+				processed[parm.path()] = new_str[0]
+				print parm.path() + " is set to: " + new_str[0]
+			else:
+				node.parm(parm_name).set(new_str[0])
+
+###   PySide   Windows ########
+from PySide2.QtWidgets import *
+from PySide2.QtCore import *
+class allJOB_window(QWidget):
+	def __init__(self, parent=None):
+		#initial window
+		super(allJOB_window, self).__init__()
+		self.setGeometry(500, 200, 300, 100)
+		self.setFixedSize(300, 100)
+		self.setWindowTitle('Change Path')
+
+		self.text = QLabel('Change all paths to:')
+		self.text.setMargin(20)
+
+		self.button1 = QPushButton('JOB')
+		self.button1.setContentsMargins(0,0,0,0)
+		@self.button1.clicked.connect
+		def paulwinex1():
+			all_JOB('JOB', self.check_state)
+			self.close()
+
+		self.button2 = QPushButton('JOB_S')
+		self.button2.setContentsMargins(0,0,0,0)
+		@self.button2.clicked.connect
+		def paulwinex2():
+			all_JOB('JOB_S', self.check_state)
+			self.close()
+
+		self.chx_label = QLabel('TEST:')
+		self.chx_label.setMargin(10)
+		self.chx = QCheckBox()
+		self.chx.setChecked(True)
+		self.chx.stateChanged.connect(self.trig)
+		self.check_state = self.chx.isChecked()
+		self.chx.setFixedHeight(37)
+		style = \
+			".QCheckBox {\n" \
+			+ "padding: 11px" \
+			+ "}"\
+			+ ".QPushButton {\n"\
+			+ "padding: 9px" \
+			+ "}"\
+
+		self.chx.setStyleSheet(style)
+		self.button1.setStyleSheet(style)
+		self.button2.setStyleSheet(style)
+
+		Vbox = QVBoxLayout()
+		Vbox.setContentsMargins(0,0,0,0)
+		Vbox.setSpacing(1)
+		Hbox = QHBoxLayout()
+		Hbox.setSpacing(0)
+
+		Vbox.addWidget(self.text)
+		Vbox.addLayout(Hbox)
+
+		Hbox.addWidget(self.chx_label)
+		Hbox.addWidget(self.chx, Qt.AlignRight)
+		Hbox.addWidget(self.button1, Qt.AlignCenter)
+		Hbox.addWidget(self.button2, Qt.AlignCenter)
+
+		self.setLayout(Vbox)
+	def trig(self):
+		self.check_state = self.chx.isChecked()
+	def closeEvent(self, event):
+		self.setParent(None)
+
+def makeJOB():
+	w = allJOB_window()
+	w.setParent(hou.qt.mainWindow(), Qt.Window)
+	w.show()
