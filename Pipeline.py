@@ -165,6 +165,8 @@ def search_replace_str():
 				# print "send walk_and_set("+menu[1][0]+","+menu[1][1]+") for node "+root.path()
 				walk_and_set(root, menu[1][0], menu[1][1], False)
 
+# Takes subnetwork_OBJ node (it was designed for a special case when geometry of a forest comes from 3ds Max as FBX with
+# each tree contained in a separate obj node) and creates a single object with points that represent FBX objects
 def points_from_objects():
 	node = hou.selectedNodes()[0]
 	obj = hou.node('/obj')
@@ -192,6 +194,32 @@ def points_from_objects():
 	p.parm('python').set(r)
 	p.setDisplayFlag(True)
 	p.setRenderFlag(True)
+
+# Create null objects from points of a selected object. Then constraint that points to position of appropriate null objects
+def null_ctrl_points():
+	nodes = hou.selectedNodes()
+	node = nodes[0].displayNode()
+	geo = node.geometry()
+	pts = geo.points()
+	if len(pts)>0:
+		for pt in pts:
+			pos = pt.position()
+			name = 'pt_'+str(pt.number())
+			null_node = hou.node("/obj").createNode("null", name)
+			null_node.moveToGoodPosition()
+			null_node.setParms({'tx': pos[0], 'ty': pos[1], 'tz': pos[2]})
+		wr = node.createOutputNode('python')
+		r = "node = hou.pwd()\n"
+		r += "geo = node.geometry()\n"
+		r += "pts = geo.points()\n"
+		r += "for pt in pts:\n"
+		r += "\tpath = '/obj/pt_' + str(pt.number())\n"
+		r += "\tnull_node = hou.node(path)\n"
+		r += "\tt = null_node.parmTuple('t')\n"
+		r += "\tpt.setPosition((t[0].eval(), t[1].eval(), t[2].eval()))\n"
+		wr.parm('python').set(r)
+		wr.setDisplayFlag(True)
+		wr.setRenderFlag(True)
 
 def change_str(path, mode):
 	pattern1 = re.compile("\A\$JOB/|\A\$JOB$|\A\$JOB_S/|\A\$JOB_S$")
