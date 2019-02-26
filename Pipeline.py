@@ -37,16 +37,19 @@ def removeFiles():
 	nodes = hou.selectedNodes()
 	for node in nodes:
 		tname = node.type().name()
-		if(tname=="file" or tname=="filecache" or tname=="dopnet" or tname=="rop_geometry"):
+		if(tname in ["file", "filecache", "dopnet", "rop_geometry", "alembic", "Redshift_ROP"]):
 			if(tname=="dopnet"):
 				sf = re.compile("((?<=[._])\$SF(?=[1-9]?[._]))")
 				path = node.parm("explicitcachename").unexpandedString()
 				path = sf.sub("$F", path)
+			elif tname == "rop_geometry":
+				path = node.parm("sopoutput").unexpandedString()
+			elif tname == 'alembic':
+				path = node.parm("fileName").unexpandedString()
+			elif tname == "Redshift_ROP":
+				path = node.parm("RS_outputFileNamePrefix").unexpandedString()
 			else:
-				if(tname=="rop_geometry"):
-					path = node.parm("sopoutput").unexpandedString()
-				else:
-					path = node.parm("file").unexpandedString()
+				path = node.parm("file").unexpandedString()
 			test_path = os.sep.join([hou.expandString(os.path.dirname(path)), os.path.basename(path)])
 			if os.path.isfile(test_path):
 				os.remove(test_path)
@@ -114,6 +117,43 @@ def removeFiles():
 				for file in fileList:
 					os.remove(file)
 				# print "*****************\n"
+
+def sunc_capture_and_deform_region():
+	nodes = hou.selectedNodes()
+	for node in nodes:
+		tname = node.type().name()
+		if tname=="bone":
+			i = 0
+			for parm in node.parmTuple('ccrtopcap'):
+				parm.set(node.parmTuple('crtopcap')[i].eval())
+				i+=1
+			i = 0
+			for parm in node.parmTuple('ccrbotcap'):
+				parm.set(node.parmTuple('crbotcap')[i].eval())
+				i+=1
+
+def reconstruct_node():
+	save_spare = 0
+	nodes = hou.selectedNodes()
+	for node in nodes:
+		if node.type().category()==hou.objNodeTypeCategory():
+			code = ["orig_node = hou.node(\"" + node.path() + "\")\nparent = orig_node.parent()"]
+			i = 0
+			for parm in node.parms():
+				if i < 2:
+					# if save_spare==parm.isSpare() or (save_spare==1 and parm.isSpare()==0):
+						# code.append(parm.asCode())
+					i+=1
+			code.insert(1, "\norig_node.destroy()" + "\nnode=parent.createNode(\"" + node.type().name() + "\", \"" + node.name() + "\")")
+			code.insert(2, "\nnode.")
+	# for c in code:
+		# exec c
+		# code = node.asCode(recurse=False, save_spare_parms=False, save_creation_commands=True)
+		# node.destroy()
+		# code = "n = hou.selectedNodes()[0].type().name()\nprint n"
+		# exec code
+		# print code
+
 def walk_and_set(rootNode, searchStr, replString, recursive):
 	try:
 		locked = rootNode.parent().isLocked()==1
@@ -134,7 +174,7 @@ def walk_and_set(rootNode, searchStr, replString, recursive):
 				newStr = eX.replace(searchStr, replString)
 				print parm.path(), " isExp = 1", " newStr="+newStr
 				if(newStr!=eX):
-						parm.setExpression(newStr)			
+						parm.setExpression(newStr)          
 						# print parm.path(), ': expression: ', newStr
 			else:
 				if isinstance(parm.parmTemplate(), hou.StringParmTemplate):
@@ -150,7 +190,7 @@ def walk_and_set(rootNode, searchStr, replString, recursive):
 				walk_and_set(child, searchStr, replString, True)
 
 def search_replace_str():
-	nodes = hou.selectedNodes()	
+	nodes = hou.selectedNodes() 
 	menu = hou.ui.readMultiInput("In Parameters", ("search for", "replace on"), buttons=('OK', "Cancel"), initial_contents = ('\\', '/'), close_choice = 1)
 	if(menu[0]!=1):
 		if len(nodes)==0:
@@ -165,8 +205,6 @@ def search_replace_str():
 				# print "send walk_and_set("+menu[1][0]+","+menu[1][1]+") for node "+root.path()
 				walk_and_set(root, menu[1][0], menu[1][1], False)
 
-# Takes subnetwork_OBJ node (it was designed for a special case when geometry of a forest comes from 3ds Max as FBX with
-# each tree contained in a separate obj node) and creates a single object with points that represent FBX objects
 def points_from_objects():
 	node = hou.selectedNodes()[0]
 	obj = hou.node('/obj')
@@ -194,32 +232,6 @@ def points_from_objects():
 	p.parm('python').set(r)
 	p.setDisplayFlag(True)
 	p.setRenderFlag(True)
-
-# Create null objects from points of a selected object. Then constraint that points to position of appropriate null objects
-def null_ctrl_points():
-	nodes = hou.selectedNodes()
-	node = nodes[0].displayNode()
-	geo = node.geometry()
-	pts = geo.points()
-	if len(pts)>0:
-		for pt in pts:
-			pos = pt.position()
-			name = 'pt_'+str(pt.number())
-			null_node = hou.node("/obj").createNode("null", name)
-			null_node.moveToGoodPosition()
-			null_node.setParms({'tx': pos[0], 'ty': pos[1], 'tz': pos[2]})
-		wr = node.createOutputNode('python')
-		r = "node = hou.pwd()\n"
-		r += "geo = node.geometry()\n"
-		r += "pts = geo.points()\n"
-		r += "for pt in pts:\n"
-		r += "\tpath = '/obj/pt_' + str(pt.number())\n"
-		r += "\tnull_node = hou.node(path)\n"
-		r += "\tt = null_node.parmTuple('t')\n"
-		r += "\tpt.setPosition((t[0].eval(), t[1].eval(), t[2].eval()))\n"
-		wr.parm('python').set(r)
-		wr.setDisplayFlag(True)
-		wr.setRenderFlag(True)
 
 def change_str(path, mode):
 	pattern1 = re.compile("\A\$JOB/|\A\$JOB$|\A\$JOB_S/|\A\$JOB_S$")
@@ -251,6 +263,31 @@ def change_str(path, mode):
 			c = 1
 	return [new_str, c]
 
+def null_ctrl_points():
+	nodes = hou.selectedNodes()
+	node = nodes[0].displayNode()
+	geo = node.geometry()
+	pts = geo.points()
+	if len(pts)>0:
+		for pt in pts:
+			pos = pt.position()
+			name = 'pt_'+str(pt.number())
+			null_node = hou.node("/obj").createNode("null", name)
+			null_node.moveToGoodPosition()
+			null_node.setParms({'tx': pos[0], 'ty': pos[1], 'tz': pos[2]})
+		wr = node.createOutputNode('python')
+		r = "node = hou.pwd()\n"
+		r += "geo = node.geometry()\n"
+		r += "pts = geo.points()\n"
+		r += "for pt in pts:\n"
+		r += "\tpath = '/obj/pt_' + str(pt.number())\n"
+		r += "\tnull_node = hou.node(path)\n"
+		r += "\tt = null_node.parmTuple('t')\n"
+		r += "\tpt.setPosition((t[0].eval(), t[1].eval(), t[2].eval()))\n"
+		wr.parm('python').set(r)
+		wr.setDisplayFlag(True)
+		wr.setRenderFlag(True)
+
 def all_JOB(mode, chx):
 	sel_nodes = hou.selectedNodes()
 	if len(sel_nodes)!=0:
@@ -265,21 +302,21 @@ def all_JOB(mode, chx):
 		n_type = node.type().name()
 		parm_name = None
 		new_str = ['', 0]
-		if n_type == 'file':
+		if n_type in ['file', 'filecache']:
 			parm_name = 'file'
-		if n_type == 'alembic':
+		elif n_type == 'alembic':
 			parm_name = 'fileName'
-		if n_type == 'rop_geometry':
+		elif n_type == 'rop_geometry':
 			parm_name = 'sopoutput'
-		if n_type == 'rop_alembic':
+		elif n_type == 'rop_alembic':
 			parm_name = 'filename'
-		if n_type == 'Redshift_Proxy_Output':
+		elif n_type == 'Redshift_Proxy_Output':
 			parm_name = 'RS_archive_file'
-		if n_type == 'Redshift_ROP':
+		elif n_type == 'Redshift_ROP':
 			parm_name = 'RS_outputFileNamePrefix'
-		if n_type == 'ifd':
+		elif n_type == 'ifd':
 			parm_name = 'vm_picture'
-		if 'redshift' in n_type:
+		elif 'redshift' in n_type:
 			for parm in node.parms():
 				not_lock_dis_hidden = parm.isLocked()==0 and parm.isDisabled()==0 and parm.isHidden()==0
 				if parm.parmTemplate().type()==hou.parmTemplateType.String and not_lock_dis_hidden:
@@ -299,12 +336,21 @@ def all_JOB(mode, chx):
 			if  len(parm.keyframes())==0 and not_lock_dis_hidden:
 				parm_str = parm.unexpandedString()
 				new_str = change_str(parm_str, mode)
+		else:
+			hou.ui.displayMessage("Nothing was changed")
 		if new_str[1]==1 and parm_str!=new_str[0]:
 			if chx:
 				processed[parm.path()] = new_str[0]
 				print parm.path() + " is set to: " + new_str[0]
 			else:
 				node.parm(parm_name).set(new_str[0])
+	# text = ''
+	# for p, v in processed.iteritems():
+	#   text+=p+' = '+v+'\n'
+	# if len(text) >0:
+	#   hou.ui.displayMessage(text)
+	# else:
+	#   hou.ui.displayMessage("Nothing was changed")
 
 ###   PySide   Windows ########
 from PySide2.QtWidgets import *
