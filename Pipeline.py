@@ -289,6 +289,8 @@ def null_ctrl_points():
 		wr.setRenderFlag(True)
 
 def all_JOB(mode, chx):
+	# "mode" is an env variable name like "JOB" or "JOB_S"
+	# if "chx"=1 the script will print result without actualy changing parameters
 	sel_nodes = hou.selectedNodes()
 	if len(sel_nodes)!=0:
 		all_nodes = sel_nodes
@@ -329,15 +331,14 @@ def all_JOB(mode, chx):
 								print parm.path() + " is set to: " + new_str[0]
 							else:
 								parm.set(new_str[0])
-			continue
-		if parm_name:
+		if parm_name and node.parent().isLockedHDA()==0:
 			parm = node.parm(parm_name)
 			not_lock_dis_hidden = parm.isLocked()==0 and parm.isDisabled()==0 and parm.isHidden()==0
 			if  len(parm.keyframes())==0 and not_lock_dis_hidden:
 				parm_str = parm.unexpandedString()
 				new_str = change_str(parm_str, mode)
 		else:
-			hou.ui.displayMessage("Nothing was changed")
+			continue
 		if new_str[1]==1 and parm_str!=new_str[0]:
 			if chx:
 				processed[parm.path()] = new_str[0]
