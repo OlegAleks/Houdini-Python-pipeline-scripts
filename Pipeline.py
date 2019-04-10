@@ -33,8 +33,13 @@ def openCurFolder():
 				hou.ui.displayMessage('"' + dirname + '"' + " directory does not exist")
 		else: hou.ui.displayMessage(" Scene is not saved")
 
-def removeFiles():
-	nodes = hou.selectedNodes()
+def removeFiles(path_to_node=""):
+	# print "argument: ", path_to_node
+	if len(path_to_node)>0:
+		node = hou.node(path_to_node)
+		nodes = [node]
+	else:
+		nodes = hou.selectedNodes()
 	for node in nodes:
 		tname = node.type().name()
 		if(tname in ["file", "filecache", "dopnet", "rop_geometry", "alembic", "Redshift_ROP"]):
@@ -85,9 +90,9 @@ def removeFiles():
 				spl2 = os.path.split(path)
 				# print "spl2: ", spl2
 			# test for $F in path
-				pattern = re.compile("((?<=[a-z0-9A-Z])[._](?=\$F))")
+				pattern = re.compile("((?<=[a-z0-9A-Z{}])[._](?=\$F))")
 			# test for expanded frame number in path
-				pattern2 = re.compile("((?<=[a-z0-9A-Z])[._](?=[0-9]))")
+				pattern2 = re.compile("((?<=[a-z0-9A-Z])[._](?=[0-9])[0-9]{0,6}[.])")
 			# test for "padzero" expression in a sequence name
 				pattern3 = re.compile("(?<=[a-z0-9A-Z])[._](?=padzero\()")
 				padzero = pattern3.findall(spl[1])
