@@ -294,8 +294,8 @@ def null_ctrl_points():
 		wr.setRenderFlag(True)
 
 def all_JOB(mode, chx):
-	# "mode" is an env variable name like "JOB" or "JOB_S"
-	# if "chx"=1 the script will print result without actualy changing parameters
+	# mode is a string "JOB" or "JOB_S"
+	# if chx=1 the script will print result without actualy changing parameters
 	sel_nodes = hou.selectedNodes()
 	if len(sel_nodes)!=0:
 		all_nodes = sel_nodes
@@ -344,6 +344,7 @@ def all_JOB(mode, chx):
 				new_str = change_str(parm_str, mode)
 		else:
 			continue
+			# hou.ui.displayMessage("Nothing was changed")
 		if new_str[1]==1 and parm_str!=new_str[0]:
 			if chx:
 				processed[parm.path()] = new_str[0]
