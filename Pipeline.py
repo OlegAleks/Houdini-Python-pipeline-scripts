@@ -1,6 +1,29 @@
 import hou, os, sys, glob, re
 from sys import platform as _platform
 import webbrowser
+def curveSopFix():
+	nodes = hou.selectedNodes()
+	if len(nodes)==0:
+	    hou.ui.displayMessage('Select curve sop nodes')
+	else:
+	    input_ = hou.ui.readMultiInput('New coords', ('X', 'Y', 'Z'), buttons=('OK', 'Cancel'), severity=hou.severityType.Message, close_choice=1)
+	    if input_[0] != 1:
+		for node in nodes:
+		    if node.type().name()=='curve':
+			coord = node.parm('coords').eval()
+			new_coord = ''
+			for pt in coord.split():
+			    pt_coord = pt.split(',')
+			    new_pt_coord = pt_coord
+			    for i in range(len(pt_coord)):
+				elem = pt_coord[i]
+				if(input_[1][i] != ''):
+				    new_pt_coord[i] = input_[1][i]
+			    #print 'orig = ', pt_coord
+			    #print 'new = ', new_pt_coord
+			    new_coord += ','.join(new_pt_coord) + ' '
+			#print 'new string', new_coord
+			node.parm('coords').set(new_coord)
 
 def openCurFolder():
 	buttons = ("HIP", "geo", "3d-out","out","Materials","cancel")
